@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AIエージェント実現性診断票</title>
+<style>
+  :root{
+    --paper:#f7f5f2;
+    --surface:#ffffff;
+    --ink:#25303a;
+    --ink-soft:#5d6770;
+    --charcoal:#36454f;
+    --line:#e3ded7;
+    --high-fg:#a8442f; --high-bg:#f5e6e1;
+    --mid-fg:#b07a2e;  --mid-bg:#f7eedd;
+    --low-fg:#4f7a5f;  --low-bg:#e6efe8;
+    --alert-bg:#2f3b43; --alert-ink:#f4f1ea;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,system-ui,sans-serif;
+    line-height:1.7;
+    -webkit-font-smoothing:antialiased;
+    font-feature-settings:"palt";
+  }
+  .sheet{
+    max-width:880px;
+    margin:32px auto;
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:4px;
+    overflow:hidden;
+  }
+  .pad{padding:40px 48px;}
+
+  /* Header */
+  .eyebrow{
+    font-size:12px;
+    letter-spacing:.22em;
+    color:var(--charcoal);
+    font-weight:700;
+    text-transform:none;
+  }
+  .case-name{
+    font-size:27px;
+    font-weight:700;
+    margin:10px 0 6px;
+    letter-spacing:.01em;
+  }
+  .case-desc{
+    font-size:14px;
+    color:#566370;
+    margin:0;
+  }
+  .rule{height:1px;background:var(--line);border:0;margin:0;}
+
+  /* Score + radar */
+  .top-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:36px;
+    align-items:center;
+  }
+  .score-num{
+    font-size:72px;
+    font-weight:800;
+    line-height:1;
+    letter-spacing:-.02em;
+    font-feature-settings:"tnum";
+    color:var(--charcoal);
+  }
+  .score-num .slash{font-size:30px;color:#9aa3ab;font-weight:600;}
+  .score-label{font-size:12px;letter-spacing:.16em;color:#7a838c;margin-top:6px;}
+  .heavy-list{margin:18px 0 0;padding:0;list-style:none;font-size:13px;}
+  .heavy-list li{display:flex;align-items:baseline;gap:8px;padding:3px 0;}
+  .heavy-mark{color:var(--high-fg);font-weight:700;}
+  .radar-wrap{display:flex;justify-content:center;}
+  svg.radar{width:100%;max-width:320px;height:auto;}
+  .radar .grid{fill:none;stroke:#ece8e2;stroke-width:1;}
+  .radar .spoke{stroke:#ddd7cf;stroke-width:1;}
+  .radar .area{fill:rgba(54,69,79,.16);stroke:var(--charcoal);stroke-width:2;stroke-linejoin:round;}
+  .radar .dot{fill:var(--charcoal);}
+  .radar .axlabel{font-size:11px;fill:#4a5560;font-family:inherit;}
+  .radar .axval{font-size:9px;fill:#aab0b6;}
+
+  /* Priority alert */
+  .alert{
+    background:var(--alert-bg);
+    color:var(--alert-ink);
+    padding:22px 28px;
+    border-radius:4px;
+    margin:0;
+  }
+  .alert-head{
+    font-size:12px;letter-spacing:.18em;font-weight:700;
+    color:#cbb78f;margin-bottom:8px;
+  }
+  .alert-body{font-size:15px;line-height:1.7;margin:0;}
+  .alert-body strong{color:#fff;}
+
+  /* Items */
+  .group-title{
+    font-size:13px;font-weight:700;letter-spacing:.08em;
+    color:var(--charcoal);
+    margin:34px 0 14px;
+    padding-bottom:8px;border-bottom:2px solid var(--charcoal);
+  }
+  .item{padding:16px 0;border-bottom:1px solid var(--line);}
+  .item:last-child{border-bottom:0;}
+  .item-head{display:flex;align-items:center;gap:12px;margin-bottom:9px;}
+  .item-name{font-size:15px;font-weight:700;}
+  .badge{
+    font-size:11px;font-weight:700;letter-spacing:.04em;
+    padding:3px 10px;border-radius:99px;white-space:nowrap;
+  }
+  .badge.high{background:var(--high-bg);color:var(--high-fg);}
+  .badge.mid{background:var(--mid-bg);color:var(--mid-fg);}
+  .badge.low{background:var(--low-bg);color:var(--low-fg);}
+  .field{
+    display:grid;
+    grid-template-columns:92px 1fr;
+    gap:12px;
+    font-size:13.5px;
+    margin:6px 0;
+    align-items:start;
+  }
+  .field .k{
+    color:#8a929a;font-weight:600;font-size:12px;
+    line-height:1.7;
+  }
+  .field.alert-line .k{color:var(--high-fg);}
+
+  /* Footnote */
+  .note{
+    font-size:12px;color:#7c848c;line-height:1.75;
+    background:#faf8f5;border:1px solid var(--line);
+    border-radius:4px;padding:18px 22px;margin-top:8px;
+  }
+  .note .k{font-weight:700;color:#5c646c;}
+
+  @media (max-width:620px){
+    .pad{padding:28px 22px;}
+    .top-grid{grid-template-columns:1fr;gap:24px;}
+    .case-name{font-size:22px;}
+    .score-num{font-size:58px;}
+  }
+  @media print{
+    body{background:#fff;}
+    .sheet{border:0;margin:0;max-width:100%;}
+  }
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <!-- Header -->
+  <div class="pad">
+    <div class="eyebrow">AI エージェント実現性診断票</div>
+    <h1 class="case-name">要望書 → 仕様書 自動変換エージェント</h1>
+    <p class="case-desc">図表・イラストを多用した PowerPoint 形式の要望書を入力し、構造化された仕様書を出力する（Copilot 構築の依頼）</p>
+  </div>
+  <hr class="rule">
+
+  <!-- Score + Radar -->
+  <div class="pad">
+    <div class="top-grid">
+      <div>
+        <div class="score-num">22<span class="slash"> / 100</span></div>
+        <div class="score-label">実現度（目安）</div>
+        <ul class="heavy-list">
+          <li><span class="heavy-mark">✕</span><span>人間ロジックへの接触（最重量）— 接触不可</span></li>
+          <li><span class="heavy-mark">✕</span><span>正解サンプル（重い）— 入手不可</span></li>
+          <li><span class="heavy-mark">✕</span><span>タスクが解釈・翻訳型（重い）— 該当</span></li>
+        </ul>
+      </div>
+      <div class="radar-wrap">
+        <svg class="radar" viewBox="0 0 400 324" id="radar" role="img" aria-label="7項目の実現度レーダーチャート"></svg>
+      </div>
+    </div>
+  </div>
+  <hr class="rule">
+
+  <!-- Priority action -->
+  <div class="pad">
+    <div class="alert">
+      <div class="alert-head">⚠ 最優先アクション</div>
+      <p class="alert-body"><strong>ボトルネックは項目3（書き起こし担当者への接触不可）。</strong>補完の判断ロジックが暗黙知として担当者の中にあり、サンプルからは逆算できない。まず部署・チーム単位でよいので「何を見て、何を補って書いているか」を聞ける経路を一本通すこと。ここが開かない限り、他の材料が揃っても品質の天井は上がらない。</p>
+    </div>
+  </div>
+  <hr class="rule">
+
+  <!-- Items -->
+  <div class="pad">
+
+    <div class="group-title">グループ1 ｜ データが足りない系</div>
+
+    <div class="item">
+      <div class="item-head"><span class="item-name">項目1　正解サンプル</span><span class="badge high">リスク高</span></div>
+      <div class="field alert-line"><span class="k">アラート</span>完成した仕様書のサンプルが入手できていない。正解の形を AI に示せず、品質を測る基準も作れない。</div>
+      <div class="field"><span class="k">技術的根拠</span>グラウンディング不在（制限）／確率的生成（原理）— 正解に接地しないと、もっともらしい出力でも妥当性を検証できない。</div>
+      <div class="field"><span class="k">フォロー策</span>完成仕様書を最低1〜2件確保。無理なら「良し悪しの判断基準」だけでも言語化してもらう。</div>
+    </div>
+
+    <div class="item">
+      <div class="item-head"><span class="item-name">項目2　入力サンプル</span><span class="badge mid">リスク中</span></div>
+      <div class="field alert-line"><span class="k">アラート</span>実データは機密で直接見られない。ペア（要望書＋対応する仕様書）が10件未満と少ない。</div>
+      <div class="field"><span class="k">技術的根拠</span>GIGO（法則）／コンテキスト依存性（性質）— 入力と出力がペアで初めて変換ルールを逆算できる。</div>
+      <div class="field"><span class="k">フォロー策</span>機密なら構造だけ（項目・粒度・ばらつき）を共有してもらう。件数でなく変動の網羅（ケース種別・規模・作成者）で確保する。</div>
+    </div>
+
+    <div class="item">
+      <div class="item-head"><span class="item-name">項目3　人間ロジックへの接触</span><span class="badge high">リスク高</span></div>
+      <div class="field alert-line"><span class="k">アラート</span>書き起こし担当者に接触できず、補完の判断ロジックを言語化できない。</div>
+      <div class="field"><span class="k">技術的根拠</span>暗黙知の非転移性（原理／性質）— 熟練者が語っていない判断は、限られたサンプルからは取り出せない。</div>
+      <div class="field"><span class="k">フォロー策</span>個人に当たれないなら部署・チーム単位で判断基準を集める。← 最優先。</div>
+    </div>
+
+    <div class="group-title">グループ2 ｜ タスクの性質系</div>
+
+    <div class="item">
+      <div class="item-head"><span class="item-name">項目4　タスクが解釈・翻訳型</span><span class="badge high">リスク高</span></div>
+      <div class="field alert-line"><span class="k">アラート</span>要望書に書かれていない内容を担当者が解釈で補っており、単純な転記でなく「解釈を伴う書き起こし」。最も難しい類型に該当。</div>
+      <div class="field"><span class="k">技術的根拠</span>タスク類型による難易度差（性質）— 抽出は安定するが、暗黙知が介在する翻訳系は不安定。</div>
+      <div class="field"><span class="k">フォロー策</span>工程分解して抽出できる部分と解釈が要る部分を切り分け、解釈部分はルール化できないか検討する。</div>
+    </div>
+
+    <div class="item">
+      <div class="item-head"><span class="item-name">項目5　スコープ</span><span class="badge mid">リスク中</span></div>
+      <div class="field alert-line"><span class="k">アラート</span>どこまでを AI に任せ、どこからを人間がやるかの線引きが未定。解釈部分まで背負わせると項目4の難易度を自ら引き上げる。</div>
+      <div class="field"><span class="k">技術的根拠</span>タスク類型による難易度差（性質）／確率的生成（原理）。</div>
+      <div class="field"><span class="k">フォロー策</span>工程を「AI担当／人間担当／レビュー」に明示的に割り振り、不確実性の高い工程は人間側へ寄せる。</div>
+    </div>
+
+    <div class="group-title">グループ3 ｜ 期待値・合意系</div>
+
+    <div class="item">
+      <div class="item-head"><span class="item-name">項目6　品質保証の期待</span><span class="badge mid">リスク中</span></div>
+      <div class="field alert-line"><span class="k">アラート</span>前例がなく横展開できる型がない一方で、成果物の品質が期待されている。出力は本質的に揺れるため「必ず正しい」は保証できない。</div>
+      <div class="field"><span class="k">技術的根拠</span>確率的生成・非決定性（原理／性質）。</div>
+      <div class="field"><span class="k">フォロー策</span>品質保証でなく「許容できる誤り率」と「人間レビューの工程」を前提に握る。小さく試して実績を作ってから広げる。</div>
+    </div>
+
+    <div class="item">
+      <div class="item-head"><span class="item-name">項目7　評価基準</span><span class="badge high">リスク高</span></div>
+      <div class="field alert-line"><span class="k">アラート</span>正解を判定できる人がいないため、出力が合っているか誰も検証できない。成功の物差しそのものが無い。</div>
+      <div class="field"><span class="k">技術的根拠</span>グラウンディング不在（制限）— 測る基準が無ければサンプルがあっても良し悪しを判定できない。</div>
+      <div class="field"><span class="k">フォロー策</span>合格条件を観点（必須項目の網羅／表現の正確さ／許容できる誤りの種類）に分解して合意。難しければ「この出力なら OK/NG」の判定例を数件もらう。</div>
+    </div>
+
+  </div>
+  <hr class="rule">
+
+  <!-- Footnote -->
+  <div class="pad">
+    <div class="note">
+      <span class="k">重み付けに関する注記：</span>本スコアは、項目3を最重量とする重みの初期値で算出した目安。この重み付けは一つの想定であり、固定値ではない。本案件は「解釈を伴う翻訳タスク × 暗黙知の取り出し不可」という、データ系とタスク系の重い項目が重なった構図で、いずれの重み序列を採っても低位に出る案件と言える。
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  // 各項目の実現度（リスク低=3, 中=2, 高=1）。項目1〜7の順で時計回りに配置。
+  const items = [
+    {label:"正解サンプル", value:1},
+    {label:"入力サンプル", value:2},
+    {label:"人間ロジック", value:1},
+    {label:"解釈・翻訳",   value:1},
+    {label:"スコープ",     value:2},
+    {label:"品質保証",     value:2},
+    {label:"評価基準",     value:1}
+  ];
+  const MAX = 3;
+  const cx = 200, cy = 160, R = 104;
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.getElementById("radar");
+  const n = items.length;
+  const ang = i => (-90 + i*360/n) * Math.PI/180;
+  const pt = (i, r) => [cx + r*Math.cos(ang(i)), cy + r*Math.sin(ang(i))];
+
+  function poly(rRatio, cls){
+    const pts = items.map((_,i)=>pt(i, R*rRatio).map(v=>v.toFixed(1)).join(",")).join(" ");
+    const el = document.createElementNS(NS,"polygon");
+    el.setAttribute("points", pts);
+    el.setAttribute("class", cls);
+    svg.appendChild(el);
+  }
+  // grid rings
+  for(let g=1; g<=MAX; g++) poly(g/MAX, "grid");
+  // spokes
+  items.forEach((_,i)=>{
+    const [x,y]=pt(i,R);
+    const l=document.createElementNS(NS,"line");
+    l.setAttribute("x1",cx);l.setAttribute("y1",cy);
+    l.setAttribute("x2",x.toFixed(1));l.setAttribute("y2",y.toFixed(1));
+    l.setAttribute("class","spoke");svg.appendChild(l);
+  });
+  // data area
+  const dpts = items.map((it,i)=>pt(i, R*it.value/MAX).map(v=>v.toFixed(1)).join(",")).join(" ");
+  const area=document.createElementNS(NS,"polygon");
+  area.setAttribute("points",dpts);area.setAttribute("class","area");svg.appendChild(area);
+  // dots + labels
+  items.forEach((it,i)=>{
+    const [dx,dy]=pt(i, R*it.value/MAX);
+    const c=document.createElementNS(NS,"circle");
+    c.setAttribute("cx",dx.toFixed(1));c.setAttribute("cy",dy.toFixed(1));
+    c.setAttribute("r","3");c.setAttribute("class","dot");svg.appendChild(c);
+
+    const [lx,ly]=pt(i, R+18);
+    const t=document.createElementNS(NS,"text");
+    t.setAttribute("x",lx.toFixed(1));t.setAttribute("y",ly.toFixed(1));
+    t.setAttribute("class","axlabel");
+    const cosv=Math.cos(ang(i));
+    t.setAttribute("text-anchor", Math.abs(cosv)<0.3 ? "middle" : (cosv>0?"start":"end"));
+    t.setAttribute("dominant-baseline","middle");
+    t.textContent=it.label;svg.appendChild(t);
+  });
+})();
+</script>
+</body>
+</html>
