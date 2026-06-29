@@ -159,6 +159,7 @@ function changeSlide(dir) {
 }
 
 document.addEventListener('keydown', e => {
+  if (epMode) return; // 編集モード中はキー操作を無効にする
   if (e.key === 'ArrowRight') changeSlide(1);
   if (e.key === 'ArrowLeft') changeSlide(-1);
 });
@@ -168,6 +169,350 @@ document.addEventListener('keydown', e => {
 - スライド番号（例：3 / 7）はボタンの間に表示する
 - 先頭・末尾では対応するボタンを `disabled` にする
 - ボタンのhoverに `var(--accent)` 色を適用する
+
+
+### 編集UI
+
+すべての生成HTMLに以下の編集UIを含める。ブラウザ上でテキスト・書式を直接編集し、編集済みHTMLとして保存できる機能。
+
+#### 動作概要
+
+- 右上の「編集モード OFF」ボタンでON/OFFを切り替える
+- ONにすると右側にサイドパネルが開く。パネルの左端をドラッグして幅を調整できる
+- パネル幅に連動してスライドエリアが左に縮小し、パネルにコンテンツが隠れない
+- スライド内テキスト要素をクリックで選択し、テキスト内容・フォントサイズ・太字・文字色・配置を変更できる
+- グローバル設定でアクセントカラーを一括変更できる（`--accent` と `--accent-light` を更新）
+- 「↓ HTMLをダウンロード」で編集内容を反映したHTMLを保存する（編集モードOFF状態でシリアライズ）
+- ダウンロードしたHTMLを再度ブラウザで開けば再編集可能
+
+#### 配置
+
+| パーツ     | 配置場所                           |
+| ---------- | ---------------------------------- |
+| CSS        | `<style>` タグ末尾に追記           |
+| HTML       | `</body>` 直前                     |
+| JavaScript | 既存のナビゲーション JS 末尾に追記 |
+
+#### CSS
+
+```css
+/* ===== EDITOR UI ===== */
+#ep-toggle {
+  position: fixed; top: 14px; right: 14px; z-index: 2001;
+  padding: 7px 14px;
+  border: 1.5px solid var(--text-primary, #1d1d1b);
+  border-radius: 6px;
+  background: var(--bg, #fff);
+  color: var(--text-primary, #1d1d1b);
+  font-size: 12px; font-family: inherit; font-weight: 600;
+  cursor: pointer; letter-spacing: 0.01em;
+  transition: background 0.15s, color 0.15s;
+}
+#ep-toggle.on {
+  background: var(--text-primary, #1d1d1b);
+  color: var(--bg, #fff);
+}
+#ep-panel {
+  position: fixed; top: 0; right: 0; z-index: 2000;
+  width: var(--ep-w, 256px);   /* 可変幅。ドラッグで --ep-w を更新 */
+  min-width: 180px; max-width: 520px;
+  height: 100vh;
+  background: #ffffff;
+  border-left: 1px solid #e0dfd8;
+  box-shadow: -2px 0 12px rgba(0,0,0,0.1);
+  overflow-y: auto;
+  padding: 56px 16px 16px;
+  box-sizing: border-box;
+  display: none;
+  font-family: -apple-system, system-ui, "Hiragino Sans", sans-serif;
+  font-size: 13px; color: #1d1d1b;
+}
+#ep-panel.open { display: block; }
+
+/* リサイズハンドル（パネル左端） */
+#ep-resize {
+  position: absolute; left: 0; top: 0;
+  width: 5px; height: 100%;
+  cursor: col-resize; z-index: 1;
+  background: transparent;
+}
+#ep-resize:hover, body.ep-resizing #ep-resize { background: rgba(0,0,0,0.1); }
+
+/* スライドエリアをパネル幅分だけ縮小 */
+body.edit-mode { padding-right: var(--ep-w, 256px); }
+body.ep-resizing { user-select: none; cursor: col-resize; }
+
+.ep-head {
+  font-size: 13px; font-weight: 700;
+  padding-bottom: 12px; margin-bottom: 16px;
+  border-bottom: 1px solid #e0dfd8;
+}
+.ep-sec { margin-bottom: 20px; }
+.ep-sec-title {
+  font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  color: #aeaca4; margin-bottom: 10px;
+}
+.ep-row {
+  display: flex; align-items: flex-start;
+  gap: 8px; margin-bottom: 10px;
+}
+.ep-lbl {
+  font-size: 12px; width: 60px;
+  flex-shrink: 0; padding-top: 5px; line-height: 1.4;
+}
+.ep-unit { font-size: 12px; color: #86847c; padding-top: 6px; }
+#ep-text {
+  flex: 1;
+  border: 1px solid #c8c6bc; border-radius: 4px;
+  padding: 6px 8px; font-size: 12px; font-family: inherit;
+  resize: none; overflow: hidden;   /* スクロールなし・自動伸縮 */
+  line-height: 1.5; min-height: 28px; width: 100%;
+}
+#ep-size {
+  width: 60px;
+  border: 1px solid #c8c6bc; border-radius: 4px;
+  padding: 5px 8px; font-size: 12px;
+}
+.ep-cpick {
+  width: 36px; height: 30px; padding: 2px 3px;
+  border: 1px solid #c8c6bc; border-radius: 4px;
+  cursor: pointer; background: none;
+}
+.ep-btn, .ep-grp button {
+  border: 1px solid #c8c6bc; border-radius: 4px;
+  padding: 5px 10px; font-size: 12px; font-family: inherit;
+  cursor: pointer; background: #fff; color: #1d1d1b;
+  transition: all 0.1s;
+}
+.ep-grp { display: flex; gap: 4px; }
+.ep-btn.on, .ep-grp button.on {
+  background: #1d1d1b; color: #fff; border-color: #1d1d1b;
+}
+#ep-hint {
+  font-size: 12px; color: #aeaca4;
+  text-align: center; padding: 16px 0;
+}
+#ep-dl {
+  width: 100%; padding: 10px; border: none;
+  border-radius: 6px; background: #1d1d1b; color: #fff;
+  font-size: 13px; font-family: inherit; font-weight: 600;
+  cursor: pointer; margin-top: 8px; transition: opacity 0.15s;
+}
+#ep-dl:hover { opacity: 0.8; }
+body.edit-mode [data-ep] { cursor: pointer; border-radius: 3px; }
+body.edit-mode [data-ep]:hover {
+  outline: 1.5px dashed var(--accent, #1d1d1b);
+  outline-offset: 2px;
+}
+body.edit-mode [data-ep].ep-sel {
+  outline: 2px solid var(--accent, #1d1d1b);
+  outline-offset: 2px;
+}
+```
+
+#### HTML
+
+```html
+<!-- EDITOR UI -->
+<button id="ep-toggle" onclick="toggleEP()">編集モード OFF</button>
+<div id="ep-panel">
+  <div id="ep-resize"></div><!-- リサイズハンドル -->
+  <div class="ep-head">スライド編集</div>
+  <div class="ep-sec">
+    <div class="ep-sec-title">グローバル設定</div>
+    <div class="ep-row">
+      <span class="ep-lbl">アクセント色</span>
+      <input type="color" class="ep-cpick" id="ep-accent" oninput="epAccent(this.value)">
+    </div>
+  </div>
+  <div class="ep-sec">
+    <div class="ep-sec-title">テキスト要素</div>
+    <div id="ep-hint">テキストをクリックして選択</div>
+    <div id="ep-ctrl" style="display:none">
+      <div class="ep-row">
+        <span class="ep-lbl">内容</span>
+        <textarea id="ep-text" oninput="epText(this.value)"></textarea>
+      </div>
+      <div class="ep-row">
+        <span class="ep-lbl">サイズ</span>
+        <input type="number" id="ep-size" min="8" max="80" oninput="epSize(this.value)">
+        <span class="ep-unit">px</span>
+      </div>
+      <div class="ep-row">
+        <span class="ep-lbl">太字</span>
+        <button class="ep-btn" id="ep-bold" onclick="epBold()">B</button>
+      </div>
+      <div class="ep-row">
+        <span class="ep-lbl">文字色</span>
+        <input type="color" class="ep-cpick" id="ep-color" oninput="epColor(this.value)">
+      </div>
+      <div class="ep-row">
+        <span class="ep-lbl">配置</span>
+        <div class="ep-grp">
+          <button onclick="epAlign('left')" data-a="left">左</button>
+          <button onclick="epAlign('center')" data-a="center">中</button>
+          <button onclick="epAlign('right')" data-a="right">右</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <button id="ep-dl" onclick="epDownload()">↓ HTMLをダウンロード</button>
+</div>
+```
+
+#### JavaScript
+
+```javascript
+// ===== EDITOR =====
+let epMode = false, epSel = null;
+let epRsz = false, epRszX = 0, epRszW = 0; // リサイズ状態
+
+window.addEventListener('DOMContentLoaded', () => {
+  // アクセントカラーの初期値を読み込む
+  const raw = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+  const hex = epColorToHex(raw);
+  if (hex) document.getElementById('ep-accent').value = hex;
+
+  // スライド内テキスト要素に data-ep 属性を付与してクリックリスナーを登録
+  document.querySelectorAll(
+    '.slide h1,.slide h2,.slide h3,.slide p,.slide li,.slide td,.slide th'
+  ).forEach((el, i) => {
+    el.dataset.ep = i;
+    el.addEventListener('click', e => {
+      if (!epMode) return;
+      e.stopPropagation();
+      epPick(el);
+    });
+  });
+
+  // リサイズハンドル
+  const handle = document.getElementById('ep-resize');
+  handle.addEventListener('mousedown', e => {
+    epRsz = true;
+    epRszX = e.clientX;
+    epRszW = parseInt(getComputedStyle(document.getElementById('ep-panel')).width) || 256;
+    document.body.classList.add('ep-resizing');
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!epRsz) return;
+    const w = Math.max(180, Math.min(520, epRszW + (epRszX - e.clientX)));
+    document.documentElement.style.setProperty('--ep-w', w + 'px');
+  });
+  document.addEventListener('mouseup', () => {
+    if (epRsz) { epRsz = false; document.body.classList.remove('ep-resizing'); }
+  });
+});
+
+function toggleEP() {
+  epMode = !epMode;
+  document.getElementById('ep-toggle').textContent = epMode ? '編集モード ON' : '編集モード OFF';
+  document.getElementById('ep-toggle').classList.toggle('on', epMode);
+  document.getElementById('ep-panel').classList.toggle('open', epMode);
+  document.body.classList.toggle('edit-mode', epMode);
+  if (!epMode) epClear();
+}
+
+function epPick(el) {
+  if (epSel) epSel.classList.remove('ep-sel');
+  epSel = el;
+  el.classList.add('ep-sel');
+  document.getElementById('ep-hint').style.display = 'none';
+  document.getElementById('ep-ctrl').style.display = 'block';
+
+  document.getElementById('ep-text').value = el.innerText;
+  epAutosize(); // テキストエリア高さを内容に合わせる
+  document.getElementById('ep-size').value = Math.round(parseFloat(getComputedStyle(el).fontSize));
+  document.getElementById('ep-bold').classList.toggle('on', parseInt(getComputedStyle(el).fontWeight) >= 600);
+  const hex = epColorToHex(getComputedStyle(el).color);
+  if (hex) document.getElementById('ep-color').value = hex;
+  const ta = getComputedStyle(el).textAlign;
+  document.querySelectorAll('[data-a]').forEach(b =>
+    b.classList.toggle('on', b.dataset.a === ta || (ta === 'start' && b.dataset.a === 'left'))
+  );
+}
+
+function epClear() {
+  if (epSel) epSel.classList.remove('ep-sel');
+  epSel = null;
+  document.getElementById('ep-hint').style.display = 'block';
+  document.getElementById('ep-ctrl').style.display = 'none';
+}
+
+function epAutosize() {
+  const ta = document.getElementById('ep-text');
+  ta.style.height = 'auto';
+  ta.style.height = ta.scrollHeight + 'px';
+}
+
+function epAccent(v) {
+  document.documentElement.style.setProperty('--accent', v);
+  const r = parseInt(v.slice(1,3),16), g = parseInt(v.slice(3,5),16), b = parseInt(v.slice(5,7),16);
+  document.documentElement.style.setProperty('--accent-light', `rgba(${r},${g},${b},0.12)`);
+}
+
+function epText(v)  { if (epSel) epSel.textContent = v; epAutosize(); }
+function epSize(v)  { if (epSel && v) epSel.style.fontSize = v + 'px'; }
+function epColor(v) { if (epSel) epSel.style.color = v; }
+
+function epBold() {
+  if (!epSel) return;
+  const bold = parseInt(getComputedStyle(epSel).fontWeight) >= 600;
+  epSel.style.fontWeight = bold ? '400' : '700';
+  document.getElementById('ep-bold').classList.toggle('on', !bold);
+}
+
+function epAlign(v) {
+  if (!epSel) return;
+  epSel.style.textAlign = v;
+  document.querySelectorAll('[data-a]').forEach(b => b.classList.toggle('on', b.dataset.a === v));
+}
+
+function epDownload() {
+  // ダウンロード時はOFF状態でシリアライズして保存
+  const wasOn = epMode;
+  if (wasOn) {
+    document.body.classList.remove('edit-mode');
+    document.getElementById('ep-panel').classList.remove('open');
+    document.getElementById('ep-toggle').textContent = '編集モード OFF';
+    document.getElementById('ep-toggle').classList.remove('on');
+    if (epSel) epSel.classList.remove('ep-sel');
+  }
+  const html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+  if (wasOn) {
+    document.body.classList.add('edit-mode');
+    document.getElementById('ep-panel').classList.add('open');
+    document.getElementById('ep-toggle').textContent = '編集モード ON';
+    document.getElementById('ep-toggle').classList.add('on');
+    if (epSel) epSel.classList.add('ep-sel');
+  }
+  const name = (document.title || 'slide').replace(/[^\w\u3040-\u9fff]/g, '-') + '.html';
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(new Blob([html], {type:'text/html;charset=utf-8'})),
+    download: name
+  });
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(a.href);
+}
+
+function epColorToHex(css) {
+  const s = (css || '').trim();
+  if (/^#[0-9a-f]{6}$/i.test(s)) return s;
+  if (/^#[0-9a-f]{3}$/i.test(s)) return '#' + [...s.slice(1)].map(c => c+c).join('');
+  const m = s.match(/\d+/g);
+  return (m && m.length >= 3)
+    ? '#' + m.slice(0,3).map(n => parseInt(n).toString(16).padStart(2,'0')).join('')
+    : null;
+}
+```
+
+#### 注意事項
+
+- `textContent` による上書きで子要素（`<span>` 等）のマークアップが失われる。これは仕様（v1）
+- Pattern C（Linear系）の `<span>` キーワード強調は編集後に失われる可能性がある
+- `--accent-text` は自動更新しない。アクセント色を淡色に変えた場合、アクセント面上の白テキストが読みにくくなることがある
+- `body.edit-mode { padding-right: var(--ep-w) }` はスライドの16:9比率を維持したまま全体を縮小する。ナビゲーションボタンも同様に左にシフトする
 
 ### スタイル定義
 
@@ -300,6 +645,7 @@ Apple Minimalのパレットをベースに以下を追加：
 - [ ] スライド番号が正しく表示されるか
 - [ ] スタイル変数がすべての `color` / `background` / `border` に使われているか
 - [ ] 装飾的なアクセントライン・派手なヘッダーバーが入っていないか
+- [ ] 編集UIが正常に動作するか（編集モードON/OFF・テキスト選択・アクセントカラー変更・ダウンロード）
 
 ## 共通ルール
 
