@@ -165,7 +165,7 @@ document.addEventListener('keydown', e => {
 });
 ```
 
-- ナビゲーションボタン（← →）は画面下部中央に配置する
+- ナビゲーションボタン（← →）と編集トグルボタンは `.slide-footer` ラッパーで包む。ナビは中央、トグルはスライド右端に揃える（後述の「編集UI」の CSS・HTML 参照）
 - スライド番号（例：3 / 7）はボタンの間に表示する
 - 先頭・末尾では対応するボタンを `disabled` にする
 - ボタンのhoverに `var(--accent)` 色を適用する
@@ -177,7 +177,7 @@ document.addEventListener('keydown', e => {
 
 #### 動作概要
 
-- 右上の「編集モード OFF」ボタンでON/OFFを切り替える
+- スライド右下（ページ送りボタンと同列）の「編集モード OFF」ボタンでON/OFFを切り替える
 - ONにすると右側にサイドパネルが開く。パネルの左端をドラッグして幅を調整できる
 - パネル幅に連動してスライドエリアが左に縮小し、パネルにコンテンツが隠れない
 - スライド内テキスト要素をクリックで選択し、テキスト内容・フォントサイズ・太字・文字色・配置を変更できる
@@ -197,8 +197,20 @@ document.addEventListener('keydown', e => {
 
 ```css
 /* ===== EDITOR UI ===== */
+/* .slide-footer：ナビ（中央）＋編集トグル（スライド右端）を同一行に並べるラッパー */
+.slide-footer {
+  width: 100%; max-width: 1280px;
+  padding: 12px 24px 4px; /* slide-wrapper と横 padding を揃える */
+  box-sizing: border-box;
+  display: flex; align-items: center; justify-content: center;
+  position: relative;
+}
+
 #ep-toggle {
-  position: fixed; top: 14px; right: 14px; z-index: 2001;
+  /* .slide-footer 内で absolute 配置。right:24px = slide-wrapper の padding と同じ = スライド右端 */
+  position: absolute; right: 24px;
+  top: 50%; transform: translateY(-50%); /* ナビボタンと縦位置を揃える */
+  z-index: 10;
   padding: 7px 14px;
   border: 1.5px solid var(--text-primary, #1d1d1b);
   border-radius: 6px;
@@ -207,6 +219,7 @@ document.addEventListener('keydown', e => {
   font-size: 12px; font-family: inherit; font-weight: 600;
   cursor: pointer; letter-spacing: 0.01em;
   transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
 }
 #ep-toggle.on {
   background: var(--text-primary, #1d1d1b);
@@ -221,7 +234,7 @@ document.addEventListener('keydown', e => {
   border-left: 1px solid #e0dfd8;
   box-shadow: -2px 0 12px rgba(0,0,0,0.1);
   overflow-y: auto;
-  padding: 56px 16px 16px;
+  padding: 16px;
   box-sizing: border-box;
   display: none;
   font-family: -apple-system, system-ui, "Hiragino Sans", sans-serif;
@@ -314,8 +327,18 @@ body.edit-mode [data-ep].ep-sel {
 #### HTML
 
 ```html
-<!-- EDITOR UI -->
-<button id="ep-toggle" onclick="toggleEP()">編集モード OFF</button>
+<!-- フッター：ナビ（中央）＋編集トグル（スライド右端）を同一行に配置 -->
+<!-- ナビゲーション HTML をこの div で包む（slide-footer が既存の slide-nav を置き換える） -->
+<div class="slide-footer">
+  <nav class="slide-nav">
+    <button id="btn-prev" onclick="changeSlide(-1)" disabled>←</button>
+    <span id="slide-num">1 / N</span>
+    <button id="btn-next" onclick="changeSlide(1)">→</button>
+  </nav>
+  <button id="ep-toggle" onclick="toggleEP()">編集モード OFF</button>
+</div>
+
+<!-- EDITOR PANEL -->
 <div id="ep-panel">
   <div id="ep-resize"></div><!-- リサイズハンドル -->
   <div class="ep-head">スライド編集</div>
@@ -512,7 +535,7 @@ function epColorToHex(css) {
 - `textContent` による上書きで子要素（`<span>` 等）のマークアップが失われる。これは仕様（v1）
 - Pattern C（Linear系）の `<span>` キーワード強調は編集後に失われる可能性がある
 - `--accent-text` は自動更新しない。アクセント色を淡色に変えた場合、アクセント面上の白テキストが読みにくくなることがある
-- `body.edit-mode { padding-right: var(--ep-w) }` はスライドの16:9比率を維持したまま全体を縮小する。ナビゲーションボタンも同様に左にシフトする
+- `body.edit-mode { padding-right: var(--ep-w) }` はスライドの16:9比率を維持したまま全体を縮小する。`.slide-footer`（ナビ＋トグル）も同様に左にシフトするため、編集モードON時もトグルはスライド右端に揃ったまま
 
 ### スタイル定義
 
